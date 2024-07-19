@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Azure Web App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>Enter Credentials</h1>
+    <form method="post">
+        <label for="azure_doc_endpoint">Azure Document Intelligence Endpoint:</label><br>
+        <input type="text" id="azure_doc_endpoint" name="azure_doc_endpoint"><br><br>
+
+        <label for="azure_doc_key">Azure Document Intelligence Key:</label><br>
+        <input type="text" id="azure_doc_key" name="azure_doc_key"><br><br>
+
+        <label for="openai_api_key">Azure OpenAI Key:</label><br>
+        <input type="text" id="openai_api_key" name="openai_api_key"><br><br>
+
+        <label for="openai_endpoint">Azure OpenAI Endpoint:</label><br>
+        <input type="text" id="openai_endpoint" name="openai_endpoint"><br><br>
+
+        <input type="submit" value="Submit">
+    </form>
+</body>
+</html>
