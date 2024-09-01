@@ -1,6 +1,4 @@
 import os
-import base64
-from mimetypes import guess_type
 from flask import Flask, request, render_template, redirect, url_for, session
 from flask_session import Session
 from azure.core.credentials import AzureKeyCredential
@@ -15,15 +13,6 @@ app.config['SESSION_TYPE'] = 'filesystem'
 
 Session(app)
 
-# Function to encode a local image into data URL 
-def local_image_to_data_url(image_path):
-    mime_type, _ = guess_type(image_path)
-    if mime_type is None:
-        mime_type = 'application/octet-stream'
-    with open(image_path, "rb") as image_file:
-        base64_encoded_data = base64.b64encode(image_file.read()).decode('utf-8')
-    return f"data:{mime_type};base64,{base64_encoded_data}"
-
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
@@ -31,19 +20,21 @@ def index():
         session['azure_doc_key'] = request.form['azure_doc_key']
         session['openai_api_key'] = request.form['openai_api_key']
         session['openai_endpoint'] = request.form['openai_endpoint']
-        return redirect(url_for('upload_image'))
+        return redirect(url_for('upload_pdf'))
 
     return render_template('index.html')
 
 @app.route('/upload', methods=['GET', 'POST'])
-def upload_image():
+def upload_pdf():
     if request.method == 'POST':
         if 'file' not in request.files:
             return 'No file part'
         file = request.files['file']
         if file.filename == '':
             return 'No selected file'
-        if file:
+        
+        # Check if the uploaded file is a PDF
+        if file and file.filename.endswith('.pdf'):
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
             file.save(file_path)
             
@@ -55,9 +46,9 @@ def upload_image():
 
             with open(file_path, "rb") as document:
                 poller = document_intelligence_client.begin_analyze_document(
-                    "prebuilt-layout",
+                    "prebuilt-document",  # Use "prebuilt-document" for PDF files
                     document,
-                    content_type="image/jpeg",
+                    content_type="application/pdf",
                     output_content_format="markdown"
                 )
 
@@ -67,13 +58,20 @@ def upload_image():
             # Store the markdown content in the session
             session['markdown_content'] = markdown_content
 
-            # Prepare image for GPT-4 Turbo with Vision
-            image_data_url = local_image_to_data_url(file_path)
-            session['image_data_url'] = image_data_url
-
-            return redirect(url_for('ask_question'))
+            # Redirect to a new route to display the extracted content
+            return redirect(url_for('display_extracted_content'))
 
     return render_template('upload.html')
+
+@app.route('/display', methods=['GET'])
+def display_extracted_content():
+    markdown_content = session.get('markdown_content')
+
+    if not markdown_content:
+        return 'No document uploaded or processed'
+
+    # Render the extracted content
+    return render_template('display.html', content=markdown_content)
 
 @app.route('/ask', methods=['GET', 'POST'])
 def ask_question():
@@ -81,25 +79,21 @@ def ask_question():
         user_question = request.form['question']
 
         markdown_content = session.get('markdown_content')
-        image_data_url = session.get('image_data_url')
 
-        if not markdown_content or not image_data_url:
-            return 'No image uploaded'
+        if not markdown_content:
+            return 'No document uploaded or processed'
 
         # Set up OpenAI client
         openai_client = AzureOpenAI(
             api_key=session['openai_api_key'],
-            api_version="2024-02-15-preview",
+            api_version="2024-06-01",
             azure_endpoint=session['openai_endpoint']
         )
 
-        # Prepare the messages for GPT-4 Turbo with Vision
+        # Prepare the messages for GPT-4 Turbo
         messages = [
-            {"role": "system", "content": "You are provided with OCR-extracted text from medical document images in Markdown format. Your task is to analyze this text and extract relevant information to assist medical professionals. The content is formatted in Markdown, so please interpret and use Markdown syntax appropriately in your responses.Do not provide long text"},
-            {"role": "user", "content": [
-                {"type": "text", "text": f"Here's the extracted text content in Markdown format:\n\n{markdown_content}"},
-                {"type": "image_url", "image_url": {"url": image_data_url}}
-            ]},
+            {"role": "system", "content": "You are provided with OCR-extracted text from medical documents in Markdown format. Your task is to analyze this text and extract relevant information to assist medical professionals."},
+            {"role": "user", "content": f"Here's the extracted text content in Markdown format:\n\n{markdown_content}"},
             {"role": "user", "content": user_question}
         ]
 
